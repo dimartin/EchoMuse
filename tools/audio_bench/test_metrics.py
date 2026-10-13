@@ -132,3 +132,33 @@ def test_a_floor_that_moves_either_way_is_flagged():
     quieter = _res()
     quieter["levels"]["centre_floor_db"] = -86.0
     assert _verdicts({"a": _res()}, {"a": quieter})[("a", "levels.centre_floor_db")] == "worse"
+
+
+PROBE = """
+== phase 2: cost at the real 12.5Hz duty cycle, 60s ==
+  frames     750 over 60.0s (2 overran their 80ms slot)
+  latency    p50 28.9ms  p95 31.2ms  max 84.0ms  (budget 80ms)
+  CPU        38.0% of one core  (22.80s of CPU in 60.0s wall)
+  RSS        41234 KB peak
+"""
+
+
+def test_a_device_probe_report_is_read():
+    c = M.parse_probe(PROBE)
+    assert c == {"pct_of_core": 38.0, "p50_ms": 28.9, "p95_ms": 31.2, "max_ms": 84.0,
+                 "frames": 750, "seconds": 60.0, "late_frames": 2, "rss_kb": 41234}
+
+
+def test_a_report_with_no_cpu_figure_is_refused():
+    import pytest
+    with pytest.raises(ValueError):
+        M.parse_probe("VERDICT: FAIL\n")
+
+
+def test_cpu_cost_is_compared_like_any_other_measure():
+    base = {"cpu:wake": {"cpu": {"pct_of_core": 38.0, "p95_ms": 31.0, "late_frames": 0}}}
+    v = _verdicts(base, {"cpu:wake": {"cpu": {"pct_of_core": 12.0, "p95_ms": 9.0, "late_frames": 0}}})
+    assert v[("cpu:wake", "cpu.pct_of_core")] == "better" and v[("cpu:wake", "cpu.p95_ms")] == "better"
+    v = _verdicts(base, {"cpu:wake": {"cpu": {"pct_of_core": 41.0, "p95_ms": 31.0, "late_frames": 1}}})
+    assert v[("cpu:wake", "cpu.pct_of_core")] == "worse" and v[("cpu:wake", "cpu.late_frames")] == "worse"
+    assert _verdicts(base, {})[("cpu:wake", "*")] == "missing"

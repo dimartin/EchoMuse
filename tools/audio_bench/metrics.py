@@ -125,6 +125,37 @@ def echo_removed(mic: np.ndarray, out: np.ndarray, ref: np.ndarray) -> dict | No
             "first_second_db": round(float(rows[0]), 2)}
 
 
+# ── what a stage costs on an Echo ────────────────────────────────────────────
+
+def parse_probe(text: str) -> dict:
+    """Read the cost lines a device probe prints after a paced run
+    (`device/tools/oww_probe`, phase 2):
+
+        frames     750 over 60.0s (0 overran their 80ms slot)
+        latency    p50 28.9ms  p95 31.2ms  max 40.1ms  (budget 80ms)
+        CPU        38.0% of one core  (22.80s of CPU in 60.0s wall)
+        RSS        41234 KB peak
+
+    Raises ValueError when the CPU line is absent: a report with no figure
+    must not be stored as a measurement."""
+    import re
+    out: dict = {}
+    m = re.search(r"CPU\s+([\d.]+)% of one core", text)
+    if not m:
+        raise ValueError("no 'CPU ...% of one core' line in the probe output")
+    out["pct_of_core"] = float(m.group(1))
+    m = re.search(r"latency\s+p50 ([\d.]+)ms\s+p95 ([\d.]+)ms\s+max ([\d.]+)ms", text)
+    if m:
+        out["p50_ms"], out["p95_ms"], out["max_ms"] = (float(v) for v in m.groups())
+    m = re.search(r"frames\s+(\d+) over ([\d.]+)s \((\d+) overran", text)
+    if m:
+        out["frames"], out["seconds"], out["late_frames"] = int(m.group(1)), float(m.group(2)), int(m.group(3))
+    m = re.search(r"RSS\s+(\d+) KB", text)
+    if m:
+        out["rss_kb"] = int(m.group(1))
+    return out
+
+
 # ── comparing two runs ───────────────────────────────────────────────────────
 
 # (path into a capture's result, direction that is WORSE, tolerance)
@@ -136,6 +167,9 @@ CHECKS = [
     (("echo", "first_second_db"), "down", 2.0),
     (("levels", "centre_floor_db"), "either", 1.5),
     (("levels", "clipped"), "up", 0),
+    (("cpu", "pct_of_core"), "up", 2.0),
+    (("cpu", "p95_ms"), "up", 3.0),
+    (("cpu", "late_frames"), "up", 0),
 ]
 
 

@@ -3,6 +3,7 @@
 score them the same way every time (#892).
 
     bench.py run CORPUS --replay BIN [--out results.json] [--baseline base.json]
+                 [--cpu wake=probe.txt ...]
     bench.py compare base.json new.json
 
 CORPUS is a folder holding `corpus.json` and the raw captures it names. Each
@@ -91,6 +92,7 @@ def run_capture(corpus: Path, cap: dict, replay: Path, scorers: dict) -> dict:
 
 
 def table(results: dict) -> str:
+    results = {k: v for k, v in results.items() if "wake" in v}
     rows = ["capture                 scenario               wakes  recall  false/h  echo dB (first s)  floor  clip"]
     for cid, r in results.items():
         w, e, lv = r["wake"], r["echo"], r["levels"]
@@ -123,6 +125,8 @@ def main() -> int:
     r.add_argument("--out", type=Path)
     r.add_argument("--baseline", type=Path)
     r.add_argument("--only", nargs="*", help="capture ids to run")
+    r.add_argument("--cpu", nargs="*", default=[], metavar="STAGE=FILE",
+                   help="output of a device probe run on an Echo, stored as cpu:STAGE")
     c = sub.add_parser("compare")
     c.add_argument("base", type=Path)
     c.add_argument("new", type=Path)
@@ -141,6 +145,13 @@ def main() -> int:
         print(f"… {cap['id']}", file=sys.stderr, flush=True)
         results[cap["id"]] = run_capture(a.corpus, cap, a.replay, scorers)
     print(table(results))
+    for item in a.cpu:
+        stage, _, path = item.partition("=")
+        cost = M.parse_probe(Path(path).read_text())
+        results[f"cpu:{stage}"] = {"cpu": cost}
+        print(f"cpu:{stage:19s} {cost['pct_of_core']:.1f}% of one core"
+              + (f", p95 {cost['p95_ms']:.1f} ms" if "p95_ms" in cost else "")
+              + (f", {cost['late_frames']} late frames" if "late_frames" in cost else ""))
     doc = {"corpus": manifest.get("name", a.corpus.name), "captures": results}
     if a.out:
         a.out.write_text(json.dumps(doc, indent=1))

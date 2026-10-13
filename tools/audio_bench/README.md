@@ -60,7 +60,24 @@ Recordings of people are voices. Keep those corpora out of the repository.
 | `echo.median_db`, `first_second_db` | Level removed between the front end's input and output while playback was present. Every replay starts cold |
 | `levels.*` | Centre microphone floor and loud level, spread across the seven, samples at full scale |
 
+| `cpu.*` | What a stage costs on an Echo: percent of one core, latency and frames that overran, read from a device probe's output |
+
 Tolerances are in `metrics.CHECKS`.
+
+## Cost on the Echo
+
+Quality is scored on the host; cost has to be measured on an Echo, because
+its A53 is about 30 times slower and nothing here predicts it. Run a device
+probe at the real duty cycle with the firmware stopped (`device/tools/
+oww_probe` for the wake word), save what it prints, and hand it to the run:
+
+```sh
+python bench.py run CORPUS --replay BIN --cpu wake=oww_probe.txt --out new.json
+```
+
+It is stored as `cpu:wake` and compared like any other measure, so a change
+shows what it bought and what it cost in one table. A report with no CPU line
+is refused.
 
 ## Limits of this first version
 
