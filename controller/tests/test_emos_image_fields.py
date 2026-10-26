@@ -37,7 +37,8 @@ import re
 from pathlib import Path
 
 CONTROLLER = Path(__file__).resolve().parents[1]
-HANDLER = "_post_provision_emos_image"
+# The handler's parse loop, split out of it (#800).
+PARSER = "_read_emos_image_parts"
 
 
 def _api_tree() -> ast.Module:
@@ -64,9 +65,9 @@ def _handled_fields() -> set:
     handler = next(
         (n for n in ast.walk(_api_tree())
          if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-         and n.name == HANDLER),
+         and n.name == PARSER),
         None)
-    assert handler is not None, f"em_api.{HANDLER} not found"
+    assert handler is not None, f"em_api.{PARSER} not found"
 
     def _is_field_name(node) -> bool:
         return (isinstance(node, ast.Attribute) and node.attr == "name"
@@ -152,7 +153,7 @@ def test_an_unknown_field_is_logged_rather_than_skipped():
     handled = _handled_fields()
     assert handled, "the parse loop no longer branches on field.name"
     src = (CONTROLLER / "em_api.py").read_text()
-    start = src.index(f"async def {HANDLER}")
+    start = src.index(f"async def {PARSER}")
     end = src.index("\nasync def ", start + 1)
     body = src[start:end]
     assert "EMOS_IMAGE_FIELDS" in body, (
