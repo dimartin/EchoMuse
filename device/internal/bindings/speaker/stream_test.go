@@ -230,6 +230,65 @@ func TestALostEosDoesNotHoldTheBargeBarDown(t *testing.T) {
 	}
 }
 
+// The data link closed mid-stream: its EOS can never arrive, so the stream
+// must end with the link rather than stay active until some later EOS.
+func TestALinkLostMidStreamEndsTheStream(t *testing.T) {
+	s, _ := newTestStream(64)
+	pumpN(t, s, 10)
+	if !s.abandonIdleSince(time.Now()) {
+		t.Fatal("a stream last fed before the link closed must be abandoned")
+	}
+	if s.isActive() {
+		t.Fatal("an abandoned stream is not active")
+	}
+	if len(s.ch) != 10 {
+		t.Fatalf("what arrived before the drop still plays out: %d queued, want 10", len(s.ch))
+	}
+}
+
+// A replacement connection may already be feeding the plane when the old
+// one's cleanup runs. That stream is the new link's and must survive.
+func TestAStreamFedAfterTheLinkClosedIsNotAbandoned(t *testing.T) {
+	s, _ := newTestStream(64)
+	linkLost := time.Now().Add(-time.Second)
+	pumpN(t, s, 3)
+	if s.abandonIdleSince(linkLost) {
+		t.Fatal("a period arrived after linkLost: this stream rides the replacement")
+	}
+	if !s.isActive() {
+		t.Fatal("the replacement's stream must stay active")
+	}
+}
+
+// 2026-10-27, reproduced on a Dot: the link dropped mid-song, then a stop
+// flushed the music plane, arming discard on a stream whose EOS was gone.
+// Every later song was swallowed. Abandoning at the drop means the flush
+// finds nothing active; abandoning after it must still disarm the discard.
+func TestAStopAfterALostLinkDoesNotSwallowTheNextSong(t *testing.T) {
+	for _, stopFirst := range []bool{false, true} {
+		s, _ := newTestStream(64)
+		pumpN(t, s, 10)
+		if stopFirst {
+			s.flush()
+			s.abandonIdleSince(time.Now())
+		} else {
+			s.abandonIdleSince(time.Now())
+			s.flush()
+		}
+		s.drained()
+		queued, err := s.pump([]byte{9}, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !queued {
+			t.Fatalf("stopFirst=%v: the next song was discarded", stopFirst)
+		}
+		if s.eosPending.Load() {
+			t.Fatalf("stopFirst=%v: eosPending left armed for the next song", stopFirst)
+		}
+	}
+}
+
 // arriving is what the BLE scanner yields for: a reply still coming in over
 // the wire. It must end at the EOS, and must also end when the periods stop
 // without one — an EOS lost with the link would otherwise hold the scan off

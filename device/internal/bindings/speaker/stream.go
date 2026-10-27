@@ -141,10 +141,12 @@ func (s *audioStream) pump(period []byte, wireBytes int) (bool, error) {
 	}
 	newStream := !s.active
 	s.active = true
-	s.mu.Unlock()
-
+	// Under mu with active, so abandonIdleSince sees a period and the
+	// stream it belongs to together.
 	now := time.Now().UnixNano()
 	s.lastWireNs.Store(now)
+	s.mu.Unlock()
+
 	if newStream {
 		s.recvFirstNs.Store(now)
 		s.recvMaxGapNs.Store(0)
@@ -196,6 +198,37 @@ func (s *audioStream) endStream() {
 		return
 	}
 	s.eosPending.Store(true)
+}
+
+// abandonIdleSince ends a stream whose EOS was lost with the link: called
+// when a data connection closes, with the moment it closed. Without it the
+// stream stays active until some later EOS, which held the wake bar at
+// bargeInThreshold for four days on a Dot whose link dropped mid-song
+// (2026-10-23), and a stop sent after the drop armed discard with no EOS
+// coming, so the next song was swallowed whole.
+//
+// A replacement connection may already be feeding this plane by the time the
+// old one's cleanup runs, so a stream that received a period after linkLost
+// is the new connection's and is left alone. The queue is not drained: what
+// arrived before the drop still plays out.
+//
+// eosPending follows endStream's rule: armed only for a stream that was
+// playing rather than discarding, so the drain is accounted as an ending and
+// nothing is left armed for the next stream.
+func (s *audioStream) abandonIdleSince(linkLost time.Time) bool {
+	s.mu.Lock()
+	if !s.active || s.lastWireNs.Load() > linkLost.UnixNano() {
+		s.mu.Unlock()
+		return false
+	}
+	wasDiscarding := s.discarding
+	s.active = false
+	s.discarding = false
+	s.mu.Unlock()
+	if !wasDiscarding {
+		s.eosPending.Store(true)
+	}
+	return true
 }
 
 // flush drops everything queued and, if a stream is mid-flight, arms discard
