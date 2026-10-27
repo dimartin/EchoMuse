@@ -64,6 +64,14 @@ Recordings of people are voices. Keep those corpora out of the repository.
 
 Tolerances are in `metrics.CHECKS`.
 
+## When to run it
+
+On a change to what the microphones feed (`device/internal/aec`,
+`beamformer`, `wakeword`, `processor`, `bindings/mic`): run main and the
+branch over the same corpus and put `bench.py compare` in the pull request.
+The playback side has its own check, which CI runs on every change
+(`device/internal/bindings/speaker/quality_test.go`).
+
 ## Cost on the Echo
 
 Quality is scored on the host; cost has to be measured on an Echo, because
