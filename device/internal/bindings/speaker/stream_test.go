@@ -208,6 +208,28 @@ func TestNothingPlayedIsNotAudible(t *testing.T) {
 	}
 }
 
+// A stream whose EOS was lost with the link never calls endStream, so it
+// stays active. Once its queue has played out it must stop counting as
+// audible, or the device keeps its wake bar at bargeInThreshold until it is
+// rebooted (2026-10-23: a Dot's link dropped mid-song; four days of false
+// wakes at 0.25 with nothing playing).
+func TestALostEosDoesNotHoldTheBargeBarDown(t *testing.T) {
+	s, _ := newTestStream(64)
+	pumpN(t, s, 30)
+	for s.ready(24) {
+		s.take()
+	}
+	if !s.isActive() {
+		t.Fatal("precondition: no EOS arrived, so the stream is still active")
+	}
+	if !s.playedWithin(time.Now(), time.Second) {
+		t.Fatal("audible within the hold after the last period")
+	}
+	if s.playedWithin(time.Now().Add(3*time.Second), time.Second) {
+		t.Fatal("no period and nothing queued for longer than eosLostAfter: not audible")
+	}
+}
+
 // arriving is what the BLE scanner yields for: a reply still coming in over
 // the wire. It must end at the EOS, and must also end when the periods stop
 // without one — an EOS lost with the link would otherwise hold the scan off
