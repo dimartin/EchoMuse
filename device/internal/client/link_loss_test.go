@@ -11,7 +11,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/wilbowes/EchoMuse/internal/aec"
-	"github.com/wilbowes/EchoMuse/pkg/board"
 )
 
 // recordingSpeaker is a speaker.Speaker that records what the data client
@@ -64,7 +63,7 @@ func TestALinkLostMidSongAbandonsTheStream(t *testing.T) {
 	mic := newFanoutMic()
 	defer mic.close()
 	spk := &recordingSpeaker{}
-	d := NewDataClient("link-loss-test", mic, spk, aec.New(board.BiscuitMics().NumMics()))
+	d := NewDataClient("link-loss-test", mic, spk, aec.New())
 
 	start := time.Now()
 	done := make(chan error, 1)
